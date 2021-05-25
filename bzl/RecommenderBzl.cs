@@ -108,15 +108,15 @@ namespace FilmrecAPI.bzl
 
             foreach (string actorName in recommenderContext.userPick.Actors)
             {
-                people = people + await getIdByName(actorName, "person") + ",";
+                people = people + await getIdByName(actorName, "person") + "|";
             }
             foreach (string directorName in recommenderContext.userPick.Directors)
             {
-                people = people + await getIdByName(directorName, "person") + ",";
+                people = people + await getIdByName(directorName, "person") + "|";
             }
             foreach (string genre in recommenderContext.userPick.Genres)
             {
-                genres = genres + mapGenreToTMDbId(genre, "movie") + ",";
+                genres = genres + mapGenreToTMDbId(genre, "movie") + "|";
             }
             return new Tuple<string, string>(people, genres);
         }
