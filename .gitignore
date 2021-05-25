@@ -49,7 +49,7 @@ dlldata.c
 project.lock.json
 project.fragment.lock.json
 artifacts/
-
+obj
 *_i.c
 *_p.c
 *_i.h
@@ -678,3 +678,7 @@ $RECYCLE.BIN/
 # Fody - auto-generated XML schema
 
 # End of https://www.toptal.com/developers/gitignore/api/windows,visualstudio,aspnetcore,csharp
+*.cache
+*.cache
+*.cache
+.vs/filmrec-api/v16/.suo
