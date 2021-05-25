@@ -8,6 +8,6 @@ namespace FilmrecAPI.bzl
 {
     public interface IRecommenderBzl
     {
-        public Task<RecommenderResult> recommendMedia();
+        public Task<RecommenderResult> recommendMedia(RecommenderContext recommenderContext);
     }
 }
