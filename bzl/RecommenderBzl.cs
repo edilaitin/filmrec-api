@@ -8,16 +8,23 @@ namespace FilmrecAPI.bzl
 {
     public class RecommenderBzl : IRecommenderBzl
     {
-        public Task<TMDbMedia> recommendMedia()
+        public Task<RecommenderResult> recommendMedia()
         {
-            var result = new TMDbMedia()
+            var list = new List<RecMedia>();
+            list.Add(new RecMedia()
             {
                 id = "13",
                 averageRating = 8.5,
-                imageSource = "https://image.tmdb.org/t/p/w500/h5J4W4veyxMXDMjeNxZI46TsHOb.jpg",
+                imageSource = "https://image.tmdb.org/t/p/w780/h5J4W4veyxMXDMjeNxZI46TsHOb.jpg",
                 tagline = "Life is like a box of chocolates...you never know what you're gonna get.",
-                title = "Forrest Gump"
-            };
+                title = "Forrest Gump",
+                type = "movie"
+            });
+
+            var result = new RecommenderResult()
+            {
+                results = list
+            }; 
             return Task.FromResult(result);
         }
     }

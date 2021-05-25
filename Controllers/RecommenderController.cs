@@ -19,7 +19,7 @@ namespace FilmrecAPI.Controllers
             _recommenderBzl = recommenderBzl;
         }
         [HttpPost]
-        public Task<TMDbMedia> recommendMedia([FromBody] RecommenderContext recommenderContext)
+        public Task<RecommenderResult> recommendMedia([FromBody] RecommenderContext recommenderContext)
         {
             return _recommenderBzl.recommendMedia();
         }
