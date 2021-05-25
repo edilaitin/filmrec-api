@@ -76,7 +76,7 @@ namespace FilmrecAPI.bzl
 
         private async Task<List<RecMedia>> getMoviesByUserPicks(RecommenderContext recommenderContext)
         {
-            int maxNrPages = 20;
+            int maxNrPages = 100;
             var (people, genres) = await getPeopleAndGenres(recommenderContext);
             var (runTimeGte, runtimeLte) = durationsToIntPair(recommenderContext.userPick.Durations);
             
@@ -203,7 +203,7 @@ namespace FilmrecAPI.bzl
 
         private async Task<List<RecMedia>> getRecommendedMediaById(string id, string type, string apiType, int score = 0)
         {
-            int maxNrPages = 10;
+            int maxNrPages = 100;
 
             var tasks = new List<Task<List<RecMedia>>>();
             var client = new HttpClient();
