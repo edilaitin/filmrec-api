@@ -11,6 +11,8 @@ namespace FilmrecAPI.bzl
 {
     public class RecommenderBzl : IRecommenderBzl
     {
+        private const int MAX_NR_MEDIAS_RETURNED = 20;
+
         private const string baseUrl = "https://api.themoviedb.org/3";
         private const string baseImageUrl = "https://image.tmdb.org/t/p";
         private const string baseTMDbUrl = "https://www.themoviedb.org";
@@ -78,21 +80,21 @@ namespace FilmrecAPI.bzl
                 foreach (string actorName in recommenderContext.userPick.Actors)
                 {
                     var actorId = await getIdByName(actorName, "person");
-                    tasks.Add(getMediaWithPerson(actorId, "tv", "actor"));
+                    tasksByPeople.Add(getMediaWithPerson(actorId, "tv", "actor"));
                 }
                 foreach (string directorName in recommenderContext.userPick.Directors)
                 {
                     var directorId = await getIdByName(directorName, "person");
-                    tasks.Add(getMediaWithPerson(directorId, "tv", "director"));
+                    tasksByPeople.Add(getMediaWithPerson(directorId, "tv", "director"));
                 }
-                var tvSeriesByPeople = (await Task.WhenAll(tasks)).SelectMany(x => x).Distinct().ToList();
+                var tvSeriesByPeople = (await Task.WhenAll(tasksByPeople)).SelectMany(x => x).Distinct().ToList();
 
                 var tasksSimilar = new List<Task<List<RecMedia>>>();
                 foreach (string similarSeries in recommenderContext.userPick.SimilarSeries)
                 {
                     var seriesId = await getIdByName(similarSeries, "tv");
-                    var taskRecommend = getRecommendedMediaById(movieId, "tv", "recommendations");
-                    var taskSimilar = getRecommendedMediaById(movieId, "tv", "similar");
+                    var taskRecommend = getRecommendedMediaById(seriesId, "tv", "recommendations");
+                    var taskSimilar = getRecommendedMediaById(seriesId, "tv", "similar");
                     tasksSimilar.Add(taskRecommend);
                     tasksSimilar.Add(taskSimilar);
                 }
@@ -117,10 +119,10 @@ namespace FilmrecAPI.bzl
             
             medias = filteredMovies.Union(filteredTvSeries).ToList();
             var mediasWithCost = await applyScore(medias, recommenderContext, similarMoviesIds, similarTvsIds);
-            return new RecommenderContext()
+            return new RecommenderResult()
             {
-              // order the medias descending by their score
-              results = mediasWithCost.OrderByDescending(media => media.score)
+                // order the medias descending by their score
+                results = mediasWithCost.OrderByDescending(media => media.score).Take(MAX_NR_MEDIAS_RETURNED).ToList()
             };
         }
 
@@ -325,20 +327,20 @@ namespace FilmrecAPI.bzl
                         JavaScriptSerializer js = new JavaScriptSerializer();
                         dynamic resultJSON = js.DeserializeObject(content);
                         
-                        var mediaJSONs;
+                        dynamic mediaJSONs;
                         if (role == "director")
                         {
-                            mediaJsons = resultJSON["crew"];
+                            mediaJSONs = resultJSON["crew"];
                         }
                         else {
-                            mediaJsons = resultJSON["cast"];
+                            mediaJSONs = resultJSON["cast"];
                         }
                         var listResult = new List<RecMedia>();
                         foreach (dynamic mediaJSON in mediaJSONs)
                         {
                             if (mediaJSON["poster_path"] != null)
                             {
-                                var recMedia = getMediaFromJson(mediaJSON, type, score);
+                                var recMedia = getMediaFromJson(mediaJSON, type, 0);
                                 listResult.Add(recMedia);
                             }
                         }
@@ -445,23 +447,23 @@ namespace FilmrecAPI.bzl
 
                 if (mediaDetails != "invalid" && mediaCredits != "invalid")
                 {
-                    applyRatingScore(ref media);
-                    applyGenreScore(ref media, mediaDetails, recommenderContext);
-                    applyActorPresentScore(ref media, mediaCredits, recommenderContext);
-                    applyDirectorPresentScore(ref media, mediaCredits, recommenderContext);
+                    applyRatingScore(media);
+                    applyGenreScore(media, mediaDetails, recommenderContext);
+                    applyActorPresentScore(media, mediaCredits, recommenderContext);
+                    applyDirectorPresentScore(media, mediaCredits, recommenderContext);
 
                     if (media.type == "tv")
                     {
-                        applyStillRunningScore(ref media, mediaDetails, recommenderContext);
-                        applySimilarSeriesScore(ref media, similarTVsIds);
-                        applySeriesDurationScore(ref media, mediaDetails, recommenderContext);
-                        applySeasonDurationScore(ref media, mediaDetails, recommenderContext);
-                        applyEpisodeDurationScore(ref media, mediaDetails, recommenderContext);
+                        applyStillRunningScore(media, mediaDetails, recommenderContext);
+                        applySimilarSeriesScore(media, similarTVsIds);
+                        applySeriesDurationScore(media, mediaDetails, recommenderContext);
+                        applySeasonDurationScore(media, mediaDetails, recommenderContext);
+                        applyEpisodeDurationScore(media, mediaDetails, recommenderContext);
                     }
                     else if (media.type == "movie")
                     {
-                        applySimilarMoviesScore(ref media, similarMoviesIds);
-                        applyMovieDurationScore(ref media, mediaDetails, recommenderContext);
+                        applySimilarMoviesScore(media, similarMoviesIds);
+                        applyMovieDurationScore(media, mediaDetails, recommenderContext);
                     }
                 }
             }
@@ -469,14 +471,14 @@ namespace FilmrecAPI.bzl
         }
 
 
-        private void applyRatingScore(ref RecMedia media)
+        private void applyRatingScore(RecMedia media)
         {
             media.score = media.score + media.averageRating / 2;
         }
         
-        private void applyGenreScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        private void applyGenreScore(RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
         {
-            var mediaGenres = result["genres"];
+            var mediaGenres = mediaDetails["genres"];
             foreach (string genre in recommenderContext.userPick.Genres)
             {
                 var genreId = mapGenreToTMDbId(genre, "movie");
@@ -490,9 +492,9 @@ namespace FilmrecAPI.bzl
             }
         }
 
-        private void applyActorPresentScore(ref RecMedia media, dynamic mediaCredits, RecommenderContext recommenderContext)
+        private void applyActorPresentScore(RecMedia media, dynamic mediaCredits, RecommenderContext recommenderContext)
         {
-            var mediaCast = result["cast"];
+            var mediaCast = mediaCredits["cast"];
             foreach (string actorName in recommenderContext.userPick.Actors)
             {
                 foreach (dynamic castMember in mediaCast)
@@ -505,9 +507,9 @@ namespace FilmrecAPI.bzl
             }
         }
 
-        private void applyDirectorPresentScore(ref RecMedia media, dynamic mediaCredits, RecommenderContext recommenderContext)
+        private void applyDirectorPresentScore(RecMedia media, dynamic mediaCredits, RecommenderContext recommenderContext)
         {
-            var mediaCrew = result["crew"];
+            var mediaCrew = mediaCredits["crew"];
             foreach (string directorName in recommenderContext.userPick.Directors)
             {
                 foreach (dynamic crewMember in mediaCrew)
@@ -522,22 +524,22 @@ namespace FilmrecAPI.bzl
 
         // TV
 
-        private void applyStillRunningScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        private void applyStillRunningScore(RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
         {
-            var tvStatus = result["status"];
-            if (recommenderContext.StillRunning == Running.StillRunning && 
+            var tvStatus = mediaDetails["status"];
+            if (recommenderContext.userPick.StillRunning == Running.StillRunning && 
               (tvStatus == "Returning Series" || tvStatus == "In Production" || tvStatus == "Pilot"))
             {
                 media.score = media.score + Still_Running_Score;
             }
-            else if (recommenderContext.StillRunning == Running.NotRunning && 
+            else if (recommenderContext.userPick.StillRunning == Running.NotRunning && 
               (tvStatus == "Canceled" || tvStatus == "Ended"))
             {
                 media.score = media.score + Still_Running_Score;
             }
         }
 
-        private void applySimilarSeriesScore(ref RecMedia media, List<string> similarTVsIds)
+        private void applySimilarSeriesScore(RecMedia media, List<string> similarTVsIds)
         {
             foreach (string similarTVId in similarTVsIds)
             {
@@ -548,7 +550,7 @@ namespace FilmrecAPI.bzl
             }
         }
 
-        private void applySeriesDurationScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        private void applySeriesDurationScore(RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
         {
             var numberOfSeasons = mediaDetails["number_of_seasons"];
 
@@ -567,11 +569,11 @@ namespace FilmrecAPI.bzl
             }
         }
 
-        private void applySeasonDurationScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        private void applySeasonDurationScore(RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
         {
             var numberOfEpisodes = mediaDetails["number_of_episodes"];
             var numberOfSeasons = mediaDetails["number_of_seasons"];
-            var episodesPerSeason = number_of_episodes / number_of_seasons;
+            var episodesPerSeason = numberOfEpisodes / numberOfSeasons;
 
             foreach (string seasonDuration in recommenderContext.userPick.SeasonDuration)
             {
@@ -587,17 +589,17 @@ namespace FilmrecAPI.bzl
             }
         }
 
-        private void applyEpisodeDurationScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        private void applyEpisodeDurationScore(RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
         {
             var episodeRunTime = mediaDetails["episode_run_time"][0];
             foreach (string episodeDuration in recommenderContext.userPick.EpisodeDuration)
             {
                 if (
                   // imi place ca restul sunt interval dar asta e around 20 minutes :))))
-                  (seasonDuration == "around 20 mins" && episodeRunTime >= 15 && episodeRunTime <= 25) ||
-                  (seasonDuration == "20 - 30 mins" && episodeRunTime >= 20 && episodeRunTime <= 30) ||
-                  (seasonDuration == "30 -  45 mins" && episodeRunTime >= 30 && episodeRunTime <= 45) ||
-                  (seasonDuration == "45+ mins" && episodeRunTime >= 45)
+                  (episodeDuration == "around 20 mins" && episodeRunTime >= 15 && episodeRunTime <= 25) ||
+                  (episodeDuration == "20 - 30 mins" && episodeRunTime >= 20 && episodeRunTime <= 30) ||
+                  (episodeDuration == "30 -  45 mins" && episodeRunTime >= 30 && episodeRunTime <= 45) ||
+                  (episodeDuration == "45+ mins" && episodeRunTime >= 45)
                 )
                 {
                     media.score = media.score + Episode_Duration_Score;
@@ -607,7 +609,7 @@ namespace FilmrecAPI.bzl
 
         // Movie
 
-        private void applySimilarMoviesScore(ref RecMedia media, List<string> similarMoviesIds)
+        private void applySimilarMoviesScore(RecMedia media, List<string> similarMoviesIds)
         {
             foreach (string similarMovieIds in similarMoviesIds)
             {
@@ -618,17 +620,17 @@ namespace FilmrecAPI.bzl
             }
         }
 
-        private void applyMovieDurationScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        private void applyMovieDurationScore(RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
         {
             var runtime = mediaDetails["runtime"];
 
             foreach (string movieDuration in recommenderContext.userPick.Durations)
             {
                 if (
-                  (seriesDuration == "1h - 1h30" && runtime >= 60 && runtime <= 90) ||
-                  (seriesDuration == "1h30 - 2h" && runtime >= 90 && runtime <= 120) ||
-                  (seriesDuration == "2h - 2h30" && runtime >= 120 && runtime <= 150) ||
-                  (seriesDuration == "2h30+" && runtime >= 150)
+                  (movieDuration == "1h - 1h30" && runtime >= 60 && runtime <= 90) ||
+                  (movieDuration == "1h30 - 2h" && runtime >= 90 && runtime <= 120) ||
+                  (movieDuration == "2h - 2h30" && runtime >= 120 && runtime <= 150) ||
+                  (movieDuration == "2h30+" && runtime >= 150)
                 )
                 {
                     media.score = media.score + Movie_Duration_Score;
