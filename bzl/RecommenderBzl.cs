@@ -17,9 +17,33 @@ namespace FilmrecAPI.bzl
         private const string API_KEY = "59011b4c0a38b967321110cf98cf6cf5";
         private const string language = "en - US";
 
+        // SCORE RECEIVED FOR EACH RESPECTED USER PICK
+
+        // General
+        private const int Genre_Present_Score    = 2;
+        private const int Actor_Present_Score    = 5;
+        private const int Director_Present_Score = 5;
+
+        // TV Series
+        private const int Still_Running_Score    = 2;
+        private const int Similar_Series_Score   = 5;
+        private const int Series_Duration_Score  = 2;
+        private const int Season_Duration_Score  = 2;
+        private const int Episode_Duration_Score = 2;
+
+        // Movies
+        private const int Similar_Movies_Score  = 5;
+        private const int Movie_Duration_Score  = 2;
+
         public async Task<RecommenderResult> recommendMedia(RecommenderContext recommenderContext)
         {
-            if(recommenderContext.userPick.MediaType == Media.Film)
+            var medias = new List<RecMedia>();
+            var similarMoviesIds = new List<string>();
+            var similarTvsIds = new List<string>();
+            var filteredMovies = new List<RecMedia>();
+            var filteredTvSeries = new List<RecMedia>();
+
+            if(recommenderContext.userPick.MediaType == Media.Film || recommenderContext.userPick.MediaType == Media.None)
             {
                 var moviesByUserPick = await getMoviesByUserPicks(recommenderContext);
 
@@ -34,44 +58,70 @@ namespace FilmrecAPI.bzl
                 }
 
                 var moviesBySimilar = (await Task.WhenAll(tasks)).SelectMany(x => x).Distinct().ToList();
+                similarMoviesIds = moviesBySimilar
+                    .Select(movie => movie.id)
+                    .ToList();
 
-                var moviesIntersection = moviesByUserPick.Intersect(moviesBySimilar).ToList();
-                var finalMovies = moviesIntersection;
-                if (finalMovies.Count == 0)
-                {
-                    finalMovies = moviesByUserPick.Union(moviesBySimilar).ToList();
-                }
+                var finalMovies = moviesByUserPick.Union(moviesBySimilar).ToList();
 
                 var alreadySeenMoviesIds = recommenderContext.userMedias
                     .FindAll(media => media.mediaData.type == "movie")
                     .Select(media => media.mediaData.mediaId)
                     .ToList();
 
-                var filteredMovies = finalMovies
+                filteredMovies = finalMovies
                     .FindAll(movie => !alreadySeenMoviesIds.Contains(movie.id));
-
-                return new RecommenderResult()
-                {
-                    results = filteredMovies
-                };
             }
-            else
+            if(recommenderContext.userPick.MediaType == Media.Series || recommenderContext.userPick.MediaType == Media.None)
             {
-                var result = new List<RecMedia>();
-                result.Add(new RecMedia()
+                var tasksByPeople = new List<Task<List<RecMedia>>>();
+                foreach (string actorName in recommenderContext.userPick.Actors)
                 {
-                    id = "13",
-                    averageRating = 8.5,
-                    imageSource = "https://image.tmdb.org/t/p/w780/h5J4W4veyxMXDMjeNxZI46TsHOb.jpg",
-                    tagline = "Life is like a box of chocolates...you never know what you're gonna get.",
-                    title = "Forrest Gump",
-                    type = "movie"
-                });
-                return new RecommenderResult()
+                    var actorId = await getIdByName(actorName, "person");
+                    tasks.Add(getMediaWithPerson(actorId, "tv", "actor"));
+                }
+                foreach (string directorName in recommenderContext.userPick.Directors)
                 {
-                    results = result
-                };
+                    var directorId = await getIdByName(directorName, "person");
+                    tasks.Add(getMediaWithPerson(directorId, "tv", "director"));
+                }
+                var tvSeriesByPeople = (await Task.WhenAll(tasks)).SelectMany(x => x).Distinct().ToList();
+
+                var tasksSimilar = new List<Task<List<RecMedia>>>();
+                foreach (string similarSeries in recommenderContext.userPick.SimilarSeries)
+                {
+                    var seriesId = await getIdByName(similarSeries, "tv");
+                    var taskRecommend = getRecommendedMediaById(movieId, "tv", "recommendations");
+                    var taskSimilar = getRecommendedMediaById(movieId, "tv", "similar");
+                    tasksSimilar.Add(taskRecommend);
+                    tasksSimilar.Add(taskSimilar);
+                }
+
+                var tvSeriesBySimilar = (await Task.WhenAll(tasksSimilar)).SelectMany(x => x).Distinct().ToList();
+                similarTvsIds = tvSeriesBySimilar
+                    .Select(tv => tv.id)
+                    .ToList();
+
+                var tvSeriesPopular = await getPopularTvSeries();
+
+                var finalTvSeries = tvSeriesByPeople.Union(tvSeriesPopular).ToList().Union(tvSeriesBySimilar).ToList();
+
+                var alreadySeenTvsIds = recommenderContext.userMedias
+                    .FindAll(media => media.mediaData.type == "tv")
+                    .Select(media => media.mediaData.mediaId)
+                    .ToList();
+
+                filteredTvSeries = finalTvSeries
+                    .FindAll(tv => !alreadySeenTvsIds.Contains(tv.id));                
             }
+            
+            medias = filteredMovies.Union(filteredTvSeries).ToList();
+            var mediasWithCost = await applyScore(medias, recommenderContext, similarMoviesIds, similarTvsIds);
+            return new RecommenderContext()
+            {
+              // order the medias descending by their score
+              results = mediasWithCost.OrderByDescending(media => media.score)
+            };
         }
 
         private async Task<List<RecMedia>> getMoviesByUserPicks(RecommenderContext recommenderContext)
@@ -94,7 +144,31 @@ namespace FilmrecAPI.bzl
                 };
                 var task = client.SendAsync(request).ContinueWith(result =>
                 {
-                    return processMediaResponseMessage(result, "movie", 5);
+                    return processMediaResponseMessage(result, "movie", 0);
+                }).Unwrap();
+                tasks.Add(task);
+            }
+            return (await Task.WhenAll(tasks)).SelectMany(x => x).Distinct().ToList();
+        }
+
+        private async Task<List<RecMedia>> getPopularTvSeries()
+        {
+            int maxNrPages = 100;            
+            var tasks = new List<Task<List<RecMedia>>>();
+            var client = new HttpClient();
+            
+            for(int page = 1; page <= maxNrPages; page++)
+            {
+                string urlString = string.Format(baseUrl + "/tv/popular?api_key={0}&language={1}&page={2}", API_KEY, language, page);
+                
+                var request = new HttpRequestMessage()
+                {
+                    RequestUri = new Uri(urlString),
+                    Method = HttpMethod.Get,
+                };
+                var task = client.SendAsync(request).ContinueWith(result =>
+                {
+                    return processMediaResponseMessage(result, "tv", 0);
                 }).Unwrap();
                 tasks.Add(task);
             }
@@ -155,7 +229,7 @@ namespace FilmrecAPI.bzl
             string result;
             switch(genre)
             {
-                case "Drama":       result = type == "tv" ? "18"    : "18";     break;
+                case "Drama":       result = type == "tv" ? "18"    : "18getRecommendedMediaById";     break;
                 case "Comedy":      result = type == "tv" ? "35"    : "35";     break;
                 case "Romantic":    result = type == "tv" ? "10766" : "10749";  break;
                 case "Documentary": result = type == "tv" ? "99"    : "99";     break;
@@ -225,6 +299,61 @@ namespace FilmrecAPI.bzl
             return (await Task.WhenAll(tasks)).SelectMany(x => x).Distinct().ToList();
         }
 
+        private async Task<List<RecMedia>> getMediaWithPerson(string personId, string type, string role)
+        {
+          int maxNrPages = 100;
+
+            var tasks = new List<Task<List<RecMedia>>>();
+            var client = new HttpClient();
+
+            for (int page = 1; page <= maxNrPages; page++)
+            {
+                string urlString = string.Format(baseUrl + "/person/{0}/{1}_credits?api_key={2}&language={3}&page={4}", personId, type, API_KEY, language, page);
+                var request = new HttpRequestMessage()
+                {
+                    RequestUri = new Uri(urlString),
+                    Method = HttpMethod.Get,
+                };
+                var task = client.SendAsync(request).ContinueWith(async result =>
+                {
+                    var response = result.Result;
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                    {
+                        string content = await response.Content.ReadAsStringAsync();
+
+                        JavaScriptSerializer js = new JavaScriptSerializer();
+                        dynamic resultJSON = js.DeserializeObject(content);
+                        
+                        var mediaJSONs;
+                        if (role == "director")
+                        {
+                            mediaJsons = resultJSON["crew"];
+                        }
+                        else {
+                            mediaJsons = resultJSON["cast"];
+                        }
+                        var listResult = new List<RecMedia>();
+                        foreach (dynamic mediaJSON in mediaJSONs)
+                        {
+                            if (mediaJSON["poster_path"] != null)
+                            {
+                                var recMedia = getMediaFromJson(mediaJSON, type, score);
+                                listResult.Add(recMedia);
+                            }
+                        }
+                        return listResult;
+                    }
+                    else
+                    {
+                        return new List<RecMedia>();
+                    }
+                }).Unwrap();
+                tasks.Add(task);
+            }
+            return (await Task.WhenAll(tasks)).SelectMany(x => x).Distinct().ToList();
+        }
+
         private async Task<List<RecMedia>> processMediaResponseMessage(Task<HttpResponseMessage> result, string type, int score)
         {
             var response = result.Result;
@@ -235,24 +364,14 @@ namespace FilmrecAPI.bzl
 
                 JavaScriptSerializer js = new JavaScriptSerializer();
                 dynamic resultJSON = js.DeserializeObject(content);
-
+                
                 var mediaJSONs = resultJSON["results"];
                 var listResult = new List<RecMedia>();
-
                 foreach (dynamic mediaJSON in mediaJSONs)
                 {
                     if (mediaJSON["poster_path"] != null)
                     {
-                        var recMedia = new RecMedia
-                        {
-                            id = mediaJSON["id"].ToString(),
-                            title = type == "tv" ? mediaJSON["name"] : mediaJSON["title"],
-                            tagline = "No Tagline",
-                            averageRating = mediaJSON["vote_average"],
-                            imageSource = string.Format(baseImageUrl + "/w780/{0}", mediaJSON["poster_path"]),
-                            type = type,
-                            score = score
-                        };
+                        var recMedia = getMediaFromJson(mediaJSON, type, score);
                         listResult.Add(recMedia);
                     }
                 }
@@ -263,5 +382,252 @@ namespace FilmrecAPI.bzl
                 return new List<RecMedia>();
             }
         }
+
+        private RecMedia getMediaFromJson(dynamic jsonMedia, string type, int score)
+        {
+            var recMedia = new RecMedia
+            {
+                id = jsonMedia["id"].ToString(),
+                title = type == "tv" ? jsonMedia["name"] : jsonMedia["title"],
+                tagline = "No Tagline",
+                averageRating = jsonMedia["vote_average"],
+                imageSource = string.Format(baseImageUrl + "/w780/{0}", jsonMedia["poster_path"]),
+                type = type,
+                score = score
+            };
+            return recMedia;
+        }
+
+        private async Task<List<RecMedia>> applyScore(List<RecMedia> medias, RecommenderContext recommenderContext, List<string> similarMoviesIds, List<string> similarTVsIds)
+        {
+            foreach(RecMedia media in medias)
+            {
+                var client = new HttpClient();
+                string urlStringDetails = string.Format(baseUrl + "/{0}/{1}?api_key={2}&language={3}", media.type, media.id, API_KEY, language);
+                string urlStringCredits = string.Format(baseUrl + "/{0}/{1}/credits?api_key={2}&language={3}", media.type, media.id, API_KEY, language);
+
+                var requestDetails = new HttpRequestMessage()
+                {
+                    RequestUri = new Uri(urlStringDetails),
+                    Method = HttpMethod.Get,
+                };
+                var requestCredits = new HttpRequestMessage()
+                {
+                    RequestUri = new Uri(urlStringCredits),
+                    Method = HttpMethod.Get,
+                };
+
+                dynamic mediaDetails = await client.SendAsync(requestDetails).ContinueWith(async result =>
+                {
+                    var response = result.Result;
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                    {
+                        string content = await response.Content.ReadAsStringAsync();
+                        JavaScriptSerializer js = new JavaScriptSerializer();
+                        return js.DeserializeObject(content);
+                    }
+                    else { return "invalid";}
+                }).Unwrap();
+                
+                dynamic mediaCredits = await client.SendAsync(requestCredits).ContinueWith(async result =>
+                {
+                    var response = result.Result;
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                    {
+                        string content = await response.Content.ReadAsStringAsync();
+                        JavaScriptSerializer js = new JavaScriptSerializer();
+                        return js.DeserializeObject(content);
+                    }
+                    else { return "invalid";}
+                }).Unwrap();
+
+                if (mediaDetails != "invalid" && mediaCredits != "invalid")
+                {
+                    applyGenreScore(ref media, mediaDetails, recommenderContext);
+                    applyActorPresentScore(ref media, mediaCredits, recommenderContext);
+                    applyDirectorPresentScore(ref media, mediaCredits, recommenderContext);
+
+                    if (media.type == "tv")
+                    {
+                        applyStillRunningScore(ref media, mediaDetails, recommenderContext);
+                        applySimilarSeriesScore(ref media, similarTVsIds);
+                        applySeriesDurationScore(ref media, mediaDetails, recommenderContext);
+                        applySeasonDurationScore(ref media, mediaDetails, recommenderContext);
+                        applyEpisodeDurationScore(ref media, mediaDetails, recommenderContext);
+                    }
+                    else if (media.type == "movie")
+                    {
+                        applySimilarMoviesScore(ref media, similarMoviesIds);
+                        applyMovieDurationScore(ref media, mediaDetails, recommenderContext);
+                    }
+                }
+            }
+            return medias;
+        }
+
+        private void applyGenreScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        {
+            var mediaGenres = result["genres"];
+            foreach (string genre in recommenderContext.userPick.Genres)
+            {
+                var genreId = mapGenreToTMDbId(genre, "movie");
+                foreach (string mediaGenre in mediaGenres)
+                {
+                    if (genre == mediaGenre)
+                    {
+                        media.score = media.score + Genre_Present_Score;
+                    }
+                }
+            }
+        }
+
+        private void applyActorPresentScore(ref RecMedia media, dynamic mediaCredits, RecommenderContext recommenderContext)
+        {
+            var mediaCast = result["cast"];
+            foreach (string actorName in recommenderContext.userPick.Actors)
+            {
+                foreach (dynamic castMember in mediaCast)
+                {
+                    if (actorName == castMember["name"])
+                    {
+                        media.score = media.score + Actor_Present_Score;
+                    }
+                }
+            }
+        }
+
+        private void applyDirectorPresentScore(ref RecMedia media, dynamic mediaCredits, RecommenderContext recommenderContext)
+        {
+            var mediaCrew = result["crew"];
+            foreach (string directorName in recommenderContext.userPick.Directors)
+            {
+                foreach (dynamic crewMember in mediaCrew)
+                {
+                    if (directorName == crewMember["name"])
+                    {
+                        media.score = media.score + Director_Present_Score;
+                    }
+                }
+            }
+        }
+
+        // TV
+
+        private void applyStillRunningScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        {
+            var tvStatus = result["status"];
+            if (recommenderContext.StillRunning == Running.StillRunning && 
+              (tvStatus == "Returning Series" || tvStatus == "In Production" || tvStatus == "Pilot"))
+            {
+                media.score = media.score + Still_Running_Score;
+            }
+            else if (recommenderContext.StillRunning == Running.NotRunning && 
+              (tvStatus == "Canceled" || tvStatus == "Ended"))
+            {
+                media.score = media.score + Still_Running_Score;
+            }
+        }
+
+        private void applySimilarSeriesScore(ref RecMedia media, List<string> similarTVsIds)
+        {
+            foreach (string similarTVId in similarTVsIds)
+            {
+                if (similarTVId == media.id)
+                {
+                    media.score = media.score + Similar_Series_Score;
+                }
+            }
+        }
+
+        private void applySeriesDurationScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        {
+            var numberOfSeasons = mediaDetails["number_of_seasons"];
+
+            foreach (string seriesDuration in recommenderContext.userPick.SeriesDuration)
+            {
+                if (
+                  (seriesDuration == "1" && numberOfSeasons == 1) ||
+                  (seriesDuration == "1 - 3" && numberOfSeasons >= 1 && numberOfSeasons <= 3) ||
+                  (seriesDuration == "3 - 7" && numberOfSeasons >= 3 && numberOfSeasons <= 7) ||
+                  (seriesDuration == "7 - 10" && numberOfSeasons >= 7 && numberOfSeasons <= 10) ||
+                  (seriesDuration == "10+" && numberOfSeasons >= 10)
+                )
+                {
+                    media.score = media.score + Series_Duration_Score;
+                }
+            }
+        }
+
+        private void applySeasonDurationScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        {
+            var numberOfEpisodes = mediaDetails["number_of_episodes"];
+            var numberOfSeasons = mediaDetails["number_of_seasons"];
+            var episodesPerSeason = number_of_episodes / number_of_seasons;
+
+            foreach (string seasonDuration in recommenderContext.userPick.SeasonDuration)
+            {
+                if (
+                  (seasonDuration == "less than 10" && episodesPerSeason < 10) ||
+                  (seasonDuration == "10 - 16" && episodesPerSeason >= 10 && episodesPerSeason <= 16) ||
+                  (seasonDuration == "16-25" && episodesPerSeason >= 16 && episodesPerSeason <= 25) ||
+                  (seasonDuration == "25+" && episodesPerSeason >= 25)
+                )
+                {
+                    media.score = media.score + Season_Duration_Score;
+                }
+            }
+        }
+
+        private void applyEpisodeDurationScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        {
+            var episodeRunTime = mediaDetails["episode_run_time"][0];
+            foreach (string episodeDuration in recommenderContext.userPick.EpisodeDuration)
+            {
+                if (
+                  // imi place ca restul sunt interval dar asta e around 20 minutes :))))
+                  (seasonDuration == "around 20 mins" && episodeRunTime >= 15 && episodeRunTime <= 25) ||
+                  (seasonDuration == "20 - 30 mins" && episodeRunTime >= 20 && episodeRunTime <= 30) ||
+                  (seasonDuration == "30 -  45 mins" && episodeRunTime >= 30 && episodeRunTime <= 45) ||
+                  (seasonDuration == "45+ mins" && episodeRunTime >= 45)
+                )
+                {
+                    media.score = media.score + Episode_Duration_Score;
+                }
+            }
+        }
+
+        // Movie
+
+        private void applySimilarMoviesScore(ref RecMedia media, List<string> similarMoviesIds)
+        {
+            foreach (string similarMovieIds in similarMoviesIds)
+            {
+                if (similarMovieIds == media.id)
+                {
+                    media.score = media.score + Similar_Movies_Score;
+                }
+            }
+        }
+
+        private void applyMovieDurationScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        {
+            var runtime = mediaDetails["runtime"];
+
+            foreach (string movieDuration in recommenderContext.userPick.Durations)
+            {
+                if (
+                  (seriesDuration == "1h - 1h30" && runtime >= 60 && runtime <= 90) ||
+                  (seriesDuration == "1h30 - 2h" && runtime >= 90 && runtime <= 120) ||
+                  (seriesDuration == "2h - 2h30" && runtime >= 120 && runtime <= 150) ||
+                  (seriesDuration == "2h30+" && runtime >= 150)
+                )
+                {
+                    media.score = media.score + Movie_Duration_Score;
+                }
+            }
+        }
+
     }
 }
