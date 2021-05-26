@@ -8,6 +8,6 @@ namespace FilmrecAPI.Models
     public class RecMedia: TMDbMedia
     {
         public string type { get; set; }
-        public int score { get; set; }
+        public double score { get; set; }
     }
 }
