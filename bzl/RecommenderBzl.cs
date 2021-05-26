@@ -445,6 +445,7 @@ namespace FilmrecAPI.bzl
 
                 if (mediaDetails != "invalid" && mediaCredits != "invalid")
                 {
+                    applyRatingScore(ref media);
                     applyGenreScore(ref media, mediaDetails, recommenderContext);
                     applyActorPresentScore(ref media, mediaCredits, recommenderContext);
                     applyDirectorPresentScore(ref media, mediaCredits, recommenderContext);
@@ -467,6 +468,12 @@ namespace FilmrecAPI.bzl
             return medias;
         }
 
+
+        private void applyRatingScore(ref RecMedia media)
+        {
+            media.score = media.score + media.averageRating / 2;
+        }
+        
         private void applyGenreScore(ref RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
         {
             var mediaGenres = result["genres"];
