@@ -144,7 +144,7 @@ namespace FilmrecAPI.bzl
             
             for(int page = 1; page <= maxNrPages; page++)
             {
-                string urlString = string.Format(baseUrl + "/discover/movie?api_key={0}&language={1}&with_people={2}&with_genres={3}&with_runtime.gte={4}&with_runtime.lte={5}&sort_by=popularity.desc&vote_count.gte=500&without_keywords=anime&page={6}",
+                string urlString = string.Format(baseUrl + "/discover/movie?api_key={0}&language={1}&with_people={2}&with_genres={3}&with_runtime.gte={4}&with_runtime.lte={5}&sort_by=popularity.desc&vote_count.gte=500&page={6}",
                                                                             API_KEY, language, people, genres, runTimeGte, runtimeLte, page);
                 var request = new HttpRequestMessage()
                 {
@@ -170,7 +170,7 @@ namespace FilmrecAPI.bzl
 
             for (int page = 1; page <= maxNrPages; page++)
             {
-                string urlString = string.Format(baseUrl + "/discover/tv?api_key={0}&language={1}&with_genres={2}&sort_by=popularity.desc&vote_count.gte=500&without_keywords=anime&page={3}",
+                string urlString = string.Format(baseUrl + "/discover/tv?api_key={0}&language={1}&with_genres={2}&sort_by=popularity.desc&vote_count.gte=500&page={3}",
                                                                             API_KEY, language, genres, page);
                 var request = new HttpRequestMessage()
                 {
