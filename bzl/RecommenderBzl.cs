@@ -111,8 +111,9 @@ namespace FilmrecAPI.bzl
                     .ToList();
 
                 var tvSeriesPopular = await getPopularTvSeries();
+                var tvSeriesByGenre = await getTVbyGenre(recommenderContext);
 
-                var finalTvSeries = tvSeriesByPeople.Union(tvSeriesPopular).ToList().Union(tvSeriesBySimilar).ToList();
+                var finalTvSeries = tvSeriesByPeople.Union(tvSeriesPopular).ToList().Union(tvSeriesBySimilar).ToList().Union(tvSeriesByGenre).ToList();
 
                 var alreadySeenTvsIds = recommenderContext.userMedias
                     .FindAll(media => media.mediaData.type == "tv")
@@ -135,7 +136,7 @@ namespace FilmrecAPI.bzl
         private async Task<List<RecMedia>> getMoviesByUserPicks(RecommenderContext recommenderContext)
         {
             int maxNrPages = 10;
-            var (people, genres) = await getPeopleAndGenres(recommenderContext);
+            var (people, genres) = await getPeopleAndGenres(recommenderContext, "movie");
             var (runTimeGte, runtimeLte) = durationsToIntPair(recommenderContext.userPick.Durations);
             
             var tasks = new List<Task<List<RecMedia>>>();
@@ -153,6 +154,32 @@ namespace FilmrecAPI.bzl
                 var task = client.SendAsync(request).ContinueWith(result =>
                 {
                     return processMediaResponseMessage(result, "movie", 0);
+                }).Unwrap();
+                tasks.Add(task);
+            }
+            return (await Task.WhenAll(tasks)).SelectMany(x => x).Distinct().ToList();
+        }
+
+        private async Task<List<RecMedia>> getTVbyGenre(RecommenderContext recommenderContext)
+        {
+            int maxNrPages = 10;
+            var (people, genres) = await getPeopleAndGenres(recommenderContext, "tv");
+
+            var tasks = new List<Task<List<RecMedia>>>();
+            var client = new HttpClient();
+
+            for (int page = 1; page <= maxNrPages; page++)
+            {
+                string urlString = string.Format(baseUrl + "/discover/tv?api_key={0}&language={1}&with_genres={2}&sort_by=popularity.desc&page={3}",
+                                                                            API_KEY, language, genres, page);
+                var request = new HttpRequestMessage()
+                {
+                    RequestUri = new Uri(urlString),
+                    Method = HttpMethod.Get,
+                };
+                var task = client.SendAsync(request).ContinueWith(result =>
+                {
+                    return processMediaResponseMessage(result, "tv", 0);
                 }).Unwrap();
                 tasks.Add(task);
             }
@@ -183,7 +210,7 @@ namespace FilmrecAPI.bzl
             return (await Task.WhenAll(tasks)).SelectMany(x => x).Distinct().ToList();
         }
 
-        private async Task<Tuple<string, string>> getPeopleAndGenres(RecommenderContext recommenderContext)
+        private async Task<Tuple<string, string>> getPeopleAndGenres(RecommenderContext recommenderContext, String type)
         {
             string people = "";
             string genres = "";
@@ -198,7 +225,7 @@ namespace FilmrecAPI.bzl
             }
             foreach (string genre in recommenderContext.userPick.Genres)
             {
-                genres = genres + mapGenreToTMDbId(genre, "movie") + "|";
+                genres = genres + mapGenreToTMDbId(genre, type) + "|";
             }
             return new Tuple<string, string>(people, genres);
         }
@@ -239,7 +266,7 @@ namespace FilmrecAPI.bzl
             {
                 case "Drama":       result = type == "tv" ? "18"    : "18";     break;
                 case "Comedy":      result = type == "tv" ? "35"    : "35";     break;
-                case "Romantic":    result = type == "tv" ? "10749" : "10749";  break;
+                case "Romantic":    result = type == "tv" ? "10766" : "10749";  break;
                 case "Documentary": result = type == "tv" ? "99"    : "99";     break;
                 case "Action":      result = type == "tv" ? "10759" : "28";     break;
                 case "Horror":      result = type == "tv" ? "9648"  : "27";     break;
