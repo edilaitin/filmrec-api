@@ -22,7 +22,7 @@ namespace FilmrecAPI.bzl
         // SCORE RECEIVED FOR EACH RESPECTED USER PICK
 
         // General
-        private const int Genre_Present_Score    = 2;
+        private const int Genre_Present_Score    = 4;
         private const int Actor_Present_Score    = 5;
         private const int Director_Present_Score = 5;
 
@@ -488,7 +488,7 @@ namespace FilmrecAPI.bzl
 
         private void applyRatingScore(RecMedia media)
         {
-            media.score += media.averageRating / 2;
+            media.score += media.averageRating / 4;
         }
         
         private void applyGenreScore(RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
