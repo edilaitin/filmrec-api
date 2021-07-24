@@ -25,6 +25,7 @@ namespace FilmrecAPI.bzl
         private const int Genre_Present_Score    = 3;
         private const int Actor_Present_Score    = 5;
         private const int Director_Present_Score = 5;
+        private const int Language_Present_Score = 10;
 
         // TV Series
         private const int Still_Running_Score    = 1;
@@ -138,14 +139,15 @@ namespace FilmrecAPI.bzl
             int maxNrPages = 10;
             var (people, genres) = await getPeopleAndGenres(recommenderContext, "movie");
             var (runTimeGte, runtimeLte) = durationsToIntPair(recommenderContext.userPick.Durations);
-            
+            var languages = getLanguages(recommenderContext);
+
             var tasks = new List<Task<List<RecMedia>>>();
             var client = new HttpClient();
             
             for(int page = 1; page <= maxNrPages; page++)
             {
-                string urlString = string.Format(baseUrl + "/discover/movie?api_key={0}&language={1}&with_people={2}&with_genres={3}&with_runtime.gte={4}&with_runtime.lte={5}&sort_by=popularity.desc&vote_count.gte=500&page={6}",
-                                                                            API_KEY, language, people, genres, runTimeGte, runtimeLte, page);
+                string urlString = string.Format(baseUrl + "/discover/movie?api_key={0}&language={1}&with_people={2}&with_genres={3}&with_runtime.gte={4}&with_runtime.lte={5}&sort_by=popularity.desc&vote_count.gte=500&with_original_language={6}&page={7}",
+                                                                            API_KEY, language, people, genres, runTimeGte, runtimeLte, languages, page);
                 var request = new HttpRequestMessage()
                 {
                     RequestUri = new Uri(urlString),
@@ -164,14 +166,15 @@ namespace FilmrecAPI.bzl
         {
             int maxNrPages = 10;
             var (people, genres) = await getPeopleAndGenres(recommenderContext, "tv");
+            var languages = getLanguages(recommenderContext);
 
             var tasks = new List<Task<List<RecMedia>>>();
             var client = new HttpClient();
 
             for (int page = 1; page <= maxNrPages; page++)
             {
-                string urlString = string.Format(baseUrl + "/discover/tv?api_key={0}&language={1}&with_genres={2}&sort_by=popularity.desc&vote_count.gte=500&page={3}",
-                                                                            API_KEY, language, genres, page);
+                string urlString = string.Format(baseUrl + "/discover/tv?api_key={0}&language={1}&with_genres={2}&sort_by=popularity.desc&vote_count.gte=500&with_original_language={3}&page={4}",
+                                                                            API_KEY, language, genres, languages, page);
                 var request = new HttpRequestMessage()
                 {
                     RequestUri = new Uri(urlString),
@@ -230,6 +233,16 @@ namespace FilmrecAPI.bzl
             return new Tuple<string, string>(people, genres);
         }
 
+        private string getLanguages(RecommenderContext recommenderContext)
+        {
+            string languages = "";
+            foreach (string language in recommenderContext.userPick.OriginalLanguages)
+            {
+                languages = languages + mapLanguageToCode(language) + "|";
+            }
+            return languages;
+        }
+
         private Tuple<int, int> durationsToIntPair(List<string> durations)
         {
             int runTimeGte = 0;
@@ -276,6 +289,26 @@ namespace FilmrecAPI.bzl
                 default: result = ""; break;
             }
             return result; 
+        }
+
+        private string mapLanguageToCode(string language)
+        {
+            string result;
+            switch (language)
+            {
+                case "English":     result = "en"; break;
+                case "French":      result = "fr"; break;
+                case "German":      result = "de"; break;
+                case "Italian":     result = "it"; break;
+                case "Spanish":     result = "es"; break;
+                case "Portuguese":  result = "pt"; break;
+                case "Russian":     result = "ru"; break;
+                case "Chinese":     result = "zh"; break;
+                case "Japanese":    result = "ja"; break;
+
+                default: result = ""; break;
+            }
+            return result;
         }
 
         private Task<string> getIdByName(string name, string type)
@@ -490,6 +523,7 @@ namespace FilmrecAPI.bzl
                         applyGenreScore(media, mediaDetails, recommenderContext);
                         applyActorPresentScore(media, mediaCredits, recommenderContext);
                         applyDirectorPresentScore(media, mediaCredits, recommenderContext);
+                        applyLanguagePresentScore(media, mediaDetails, recommenderContext);
 
                         if (media.type == "tv")
                         {
@@ -562,6 +596,19 @@ namespace FilmrecAPI.bzl
                         media.score += Director_Present_Score;
                         break;
                     }
+                }
+            }
+        }
+
+        private void applyLanguagePresentScore(RecMedia media, dynamic mediaDetails, RecommenderContext recommenderContext)
+        {
+            var mediaLanguage = mediaDetails["original_language"];
+            foreach (string language in recommenderContext.userPick.OriginalLanguages)
+            {
+                var languageCode = mapLanguageToCode(language);
+                if (languageCode == mediaLanguage)
+                {
+                    media.score += Language_Present_Score;
                 }
             }
         }

@@ -30,6 +30,9 @@ namespace FilmrecAPI.Models
         private List<string> directors;
         public List<string> Directors { get { return directors; } set { directors = value; } }
 
+        public List<String> OriginalLanguages { get { return originalLanguages; } set { originalLanguages = value; } }
+        private List<String> originalLanguages;
+
         //series
         private Running stillRunning;
         public Running StillRunning { get { return stillRunning; } set { stillRunning = value; } }
