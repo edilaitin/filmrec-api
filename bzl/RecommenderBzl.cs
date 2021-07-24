@@ -269,7 +269,7 @@ namespace FilmrecAPI.bzl
                 case "Romantic":    result = type == "tv" ? "10749" : "10749";  break;
                 case "Documentary": result = type == "tv" ? "99"    : "99";     break;
                 case "Action":      result = type == "tv" ? "10759" : "28";     break;
-                case "Horror":      result = type == "tv" ? "9648"  : "27";     break;
+                case "Horror":      result = type == "tv" ? "27"    : "27";     break;
                 case "Thriller":    result = type == "tv" ? "80"    : "53";     break;
                 case "Fantasy":     result = type == "tv" ? "10765" : "14";     break;
 
