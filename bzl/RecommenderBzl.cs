@@ -27,7 +27,7 @@ namespace FilmrecAPI.bzl
         private const int Director_Present_Score = 5;
 
         // TV Series
-        private const int Still_Running_Score    = 2;
+        private const int Still_Running_Score    = 1;
         private const int Similar_Series_Score   = 5;
         private const int Series_Duration_Score  = 2;
         private const int Season_Duration_Score  = 2;
@@ -239,7 +239,7 @@ namespace FilmrecAPI.bzl
             {
                 case "Drama":       result = type == "tv" ? "18"    : "18";     break;
                 case "Comedy":      result = type == "tv" ? "35"    : "35";     break;
-                case "Romantic":    result = type == "tv" ? "10766" : "10749";  break;
+                case "Romantic":    result = type == "tv" ? "10749" : "10749";  break;
                 case "Documentary": result = type == "tv" ? "99"    : "99";     break;
                 case "Action":      result = type == "tv" ? "10759" : "28";     break;
                 case "Horror":      result = type == "tv" ? "9648"  : "27";     break;
