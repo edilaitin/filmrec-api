@@ -425,7 +425,7 @@ namespace FilmrecAPI.bzl
                 id = jsonMedia["id"].ToString(),
                 title = type == "tv" ? jsonMedia["name"] : jsonMedia["title"],
                 tagline = "No Tagline",
-                averageRating = jsonMedia["vote_average"],
+                averageRating = jsonMedia["vote_count"] > 100 ? jsonMedia["vote_average"] : 0,
                 imageSource = string.Format(baseImageUrl + "/w780/{0}", jsonMedia["poster_path"]),
                 type = type,
                 score = 0
